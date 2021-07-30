@@ -13,6 +13,8 @@ use reqwest::{blocking::Client, header::HeaderMap};
 use std::env;
 use std::fs::OpenOptions;
 use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::thread;
+use std::time::Duration;
 
 type Token = String;
 type Validated = Option<String>;
@@ -136,6 +138,7 @@ fn worker(r: Receiver<Token>, s: Sender<Validated>) -> Result<()> {
 fn validate(tok: &str) -> bool {
     use reqwest::header::AUTHORIZATION;
     use reqwest::header::CONTENT_TYPE;
+    use reqwest::StatusCode;
 
     const URL: &str = "https://discordapp.com/api/v6/users/@me/library";
     lazy_static! {
@@ -152,5 +155,21 @@ fn validate(tok: &str) -> bool {
     let resp = CLIENT.get(URL).headers(headers).send().unwrap();
 
     // if disord gives us an OK then the token is valid
-    resp.status() == 200
+    let status = resp.status();
+    match status {
+        StatusCode::OK => true,
+        StatusCode::TOO_MANY_REQUESTS => {
+            let wait = resp.headers().get("Retry-After")
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .parse::<u64>()
+                .unwrap();
+            
+            println!("rate limited, waiting [{}s]", wait);
+            thread::sleep(Duration::from_secs(wait));
+            validate(tok)
+        }
+        _ => false
+    }
 }

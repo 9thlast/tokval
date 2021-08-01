@@ -2,57 +2,131 @@
 extern crate anyhow;
 extern crate crossbeam;
 extern crate num_cpus;
-#[macro_use]
-extern crate lazy_static;
 extern crate reqwest;
+extern crate rand;
+#[macro_use]
+extern crate log;
+extern crate simplelog;
+
+mod validate;
 
 use anyhow::Result;
 use crossbeam::channel::bounded;
 use crossbeam::channel::{Receiver, Sender};
-use reqwest::{blocking::Client, header::HeaderMap};
-use std::env;
+use clap::{App, Arg};
 use std::fs::OpenOptions;
 use std::io::{BufRead, BufReader, BufWriter, Write};
-use std::thread;
-use std::time::Duration;
+use validate::Validator;
+use std::env;
 
 type Token = String;
 type Validated = Option<String>;
 
 fn main() -> Result<()> {
-    // only run the program if we have both an input and output file
-    let usage = "usage: tokval input_file.txt output_file.txt";
-    let args: Vec<String> = env::args().collect();
-    if args.len() != 3 {
-        println!("{}", usage);
-        return Ok(());
-    }
+    let level = if let Some(val) = env::vars().find(|i| i.0 == "TOKVAL_LOG") {
+        let mut val = val.1.clone();
+        val.make_ascii_lowercase();
+
+        match val.as_str() {
+            "error" => log::LevelFilter::Error,
+            "warn" => log::LevelFilter::Warn,
+            "info" => log::LevelFilter::Info,
+            "debug" => log::LevelFilter::Debug,
+            "trace" => log::LevelFilter::Trace,
+            _ => {
+                warn!("unknown log level: {}", val);
+                log::LevelFilter::Info
+            }
+        }
+    } else {
+        log::LevelFilter::Info
+    };
+
+    simplelog::SimpleLogger::init(
+        level,
+        simplelog::Config::default()
+    )?;
+
+    let matches = App::new("tokval")
+        .version("1.1.0")
+        .author("9th")
+        .about("high-speed discord token validator")
+        .arg(
+            Arg::with_name("input_file")
+                .help("file containing a line-separated list of tokens")
+                .required(true)
+                .index(1)
+        )
+        .arg(
+            Arg::with_name("output_file")
+                .help("file to write all valid tokens to")
+                .required(true)
+                .index(2)
+        )
+        .arg(
+            Arg::with_name("proxies")
+                .short("p")
+                .long("proxies")
+                .value_name("proxyfile")
+                .help("file containing a line-separated list of proxies")
+                .takes_value(true)
+        ).get_matches();
 
     // open input file and ensure it's good
+    let input_path = matches.value_of("input_file").unwrap();
     let input_file = OpenOptions::new()
         .read(true)
         .write(false)
-        .open(args.get(1).unwrap());
+        .open(input_path);
     let input_file = match input_file {
         Ok(f) => f,
         Err(e) => {
-            println!("error opening input file [{}]: {}", args[1], e);
+            error!("error opening input file [{}]: {}", input_path, e);
             return Err(anyhow!(e));
         }
     };
 
     // open output file and ensure it's good
+    let output_path = matches.value_of("output_file").unwrap();
     let output_file = OpenOptions::new()
         .write(true)
         .truncate(true)
         .create(true)
-        .open(args.get(2).unwrap());
+        .open(output_path);
     let output_file = match output_file {
         Ok(f) => f,
         Err(e) => {
-            println!("error opening output file: [{}]: {}", args[2], e);
+            error!("error opening output file: [{}]: {}", output_path, e);
             return Err(anyhow!(e));
         }
+    };
+
+    let validator = if matches.is_present("proxies") {
+        let proxy_path = matches.value_of("proxies").unwrap();
+        let proxy_file = OpenOptions::new()
+            .read(true)
+            .write(false)
+            .open(proxy_path);
+        let proxy_file = match proxy_file {
+            Ok(f) => f,
+            Err(e) => {
+                error!("error opening proxy file [{}]: {}", proxy_path, e);
+                return Err(anyhow!(e));
+            }
+        };
+
+        let mut proxies: Vec<String> = Vec::new();
+        for line in BufReader::new(proxy_file).lines() {
+            let line = line?;
+            if !line.trim().is_empty() {
+                proxies.push(line);
+            }
+        }
+        info!("initialized [{}] proxied clients", proxies.len());
+
+        Validator::from(proxies)?
+    } else {
+        Validator::new()
     };
 
     // spawn as many threads as the cpu has
@@ -70,8 +144,8 @@ fn main() -> Result<()> {
         }
     }
 
-    println!("read [{}] tokens", tokens.len());
-    println!("spawning [{}] worker threads", num_threads);
+    info!("read [{}] tokens", tokens.len());
+    info!("spawning [{}] worker threads", num_threads);
 
     let total_tokens = tokens.len();
     let mut num_validated = 0;
@@ -94,7 +168,8 @@ fn main() -> Result<()> {
             let (r, s) = (tok_recv.clone(), val_send.clone());
 
             // just give the thread a closure that calls the worker function
-            sc.spawn(move |_| worker(r, s));
+            let cloned = validator.clone();
+            sc.spawn(move |_| worker(cloned, r, s));
         }
 
         // manaully drop this sender too
@@ -115,17 +190,17 @@ fn main() -> Result<()> {
     })
     .unwrap();
 
-    println!(
+    info!(
         "out of [{}] tokens, found [{}] to be valid",
         total_tokens, num_validated
     );
-    println!("wrote valid tokens to [{}]", args[2]);
+    info!("wrote valid tokens to [{}]", output_path);
     Ok(())
 }
 
-fn worker(r: Receiver<Token>, s: Sender<Validated>) -> Result<()> {
+fn worker(mut v: Validator, r: Receiver<Token>, s: Sender<Validated>) -> Result<()> {
     for tok in r.iter() {
-        if validate(&tok) {
+        if v.validate(&tok) {
             s.send(Some(tok))?;
         } else {
             s.send(None)?;
@@ -133,43 +208,4 @@ fn worker(r: Receiver<Token>, s: Sender<Validated>) -> Result<()> {
     }
 
     Ok(())
-}
-
-fn validate(tok: &str) -> bool {
-    use reqwest::header::AUTHORIZATION;
-    use reqwest::header::CONTENT_TYPE;
-    use reqwest::StatusCode;
-
-    const URL: &str = "https://discordapp.com/api/v6/users/@me/library";
-    lazy_static! {
-      // use lazy_static to keep the same client for the validator function
-      static ref CLIENT: Client = Client::new();
-    }
-
-    // generate the headers for hte request
-    let mut headers = HeaderMap::new();
-    headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
-    headers.insert(AUTHORIZATION, tok.parse().unwrap());
-    // we unwrap the value here
-    // that's fine, this will only fail in *rare* circumstances
-    let resp = CLIENT.get(URL).headers(headers).send().unwrap();
-
-    // if disord gives us an OK then the token is valid
-    let status = resp.status();
-    match status {
-        StatusCode::OK => true,
-        StatusCode::TOO_MANY_REQUESTS => {
-            let wait = resp.headers().get("Retry-After")
-                .unwrap()
-                .to_str()
-                .unwrap()
-                .parse::<u64>()
-                .unwrap();
-            
-            println!("rate limited, waiting [{}s]", wait);
-            thread::sleep(Duration::from_secs(wait));
-            validate(tok)
-        }
-        _ => false
-    }
 }

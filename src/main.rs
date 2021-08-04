@@ -96,7 +96,6 @@ fn main() -> Result<()> {
         }
     };
 
-    
     let validator = if matches.is_present("proxies") {
         let proxy_path = matches.value_of("proxies").unwrap();
         let proxy_file = OpenOptions::new().read(true).write(false).open(proxy_path);

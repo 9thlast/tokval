@@ -2,8 +2,8 @@
 extern crate anyhow;
 extern crate crossbeam;
 extern crate num_cpus;
-extern crate reqwest;
 extern crate rand;
+extern crate reqwest;
 #[macro_use]
 extern crate log;
 extern crate simplelog;
@@ -11,20 +11,20 @@ extern crate simplelog;
 mod validate;
 
 use anyhow::Result;
+use clap::{App, Arg};
 use crossbeam::channel::bounded;
 use crossbeam::channel::{Receiver, Sender};
-use clap::{App, Arg};
+use std::env;
 use std::fs::OpenOptions;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use validate::Validator;
-use std::env;
 
 type Token = String;
 type Validated = Option<String>;
 
 fn main() -> Result<()> {
     let level = if let Some(val) = env::vars().find(|i| i.0 == "TOKVAL_LOG") {
-        let mut val = val.1.clone();
+        let mut val = val.1;
         val.make_ascii_lowercase();
 
         match val.as_str() {
@@ -42,10 +42,7 @@ fn main() -> Result<()> {
         log::LevelFilter::Info
     };
 
-    simplelog::SimpleLogger::init(
-        level,
-        simplelog::Config::default()
-    )?;
+    simplelog::SimpleLogger::init(level, simplelog::Config::default())?;
 
     let matches = App::new("tokval")
         .version("1.1.0")
@@ -55,13 +52,13 @@ fn main() -> Result<()> {
             Arg::with_name("input_file")
                 .help("file containing a line-separated list of tokens")
                 .required(true)
-                .index(1)
+                .index(1),
         )
         .arg(
             Arg::with_name("output_file")
                 .help("file to write all valid tokens to")
                 .required(true)
-                .index(2)
+                .index(2),
         )
         .arg(
             Arg::with_name("proxies")
@@ -69,15 +66,13 @@ fn main() -> Result<()> {
                 .long("proxies")
                 .value_name("proxyfile")
                 .help("file containing a line-separated list of proxies")
-                .takes_value(true)
-        ).get_matches();
+                .takes_value(true),
+        )
+        .get_matches();
 
     // open input file and ensure it's good
     let input_path = matches.value_of("input_file").unwrap();
-    let input_file = OpenOptions::new()
-        .read(true)
-        .write(false)
-        .open(input_path);
+    let input_file = OpenOptions::new().read(true).write(false).open(input_path);
     let input_file = match input_file {
         Ok(f) => f,
         Err(e) => {
@@ -101,12 +96,10 @@ fn main() -> Result<()> {
         }
     };
 
+    
     let validator = if matches.is_present("proxies") {
         let proxy_path = matches.value_of("proxies").unwrap();
-        let proxy_file = OpenOptions::new()
-            .read(true)
-            .write(false)
-            .open(proxy_path);
+        let proxy_file = OpenOptions::new().read(true).write(false).open(proxy_path);
         let proxy_file = match proxy_file {
             Ok(f) => f,
             Err(e) => {
@@ -131,6 +124,7 @@ fn main() -> Result<()> {
 
     // spawn as many threads as the cpu has
     let num_threads = num_cpus::get();
+
     // create the initial senders and receivers
     let (tok_send, tok_recv) = bounded::<Token>(1);
     let (val_send, val_recv) = bounded::<Validated>(1);
@@ -163,12 +157,13 @@ fn main() -> Result<()> {
         });
 
         // then, spawn num_threads worker threads for processing
-        for _ in 0..num_threads {
+        for i in 0..num_threads {
             // clone the receiver and sender necessary for the worker
             let (r, s) = (tok_recv.clone(), val_send.clone());
 
             // just give the thread a closure that calls the worker function
-            let cloned = validator.clone();
+            let mut cloned = validator.clone();
+            cloned.set_client_offset(i);
             sc.spawn(move |_| worker(cloned, r, s));
         }
 

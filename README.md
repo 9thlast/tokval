@@ -6,7 +6,7 @@ tokval is distributed as an executable with no dependencies, so just download it
 - \*nix systems: `./tokval input_file.txt output_file.txt`
 - windows systems: `.\tokval.exe input_file.txt output_file.txt`
 
-the `input_file.txt` here is a list of discord tokens, one per line. `output_file.txt` is the file to write all the valid tokens to (WARNING: tokval will overwrite all contents of `output_file.txt` so be careful!)
+the `input_file.txt` here is a list of discord tokens, one per line. `output_file.txt` is the file to write all the valid tokens to (WARNING: tokval will overwrite all contents of `output_file.txt` so be careful!) additionally, tokval supports a `--proxy` option that allows you to specify a file containing a line-separated list of http proxies to use while validating tokens.
 
 optionally, tokval may be installed to a location in your `PATH` and made available from the command-line anywhere
 

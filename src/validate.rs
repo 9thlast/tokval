@@ -43,10 +43,10 @@ impl Validator {
     }
 
     pub fn next_client(&mut self) -> &Client {
-        let client_idx = self.offset + self.current;
+        let client_idx = (self.offset + self.current) % self.clients.len();
         self.current += 1;
         debug!("using client {}", client_idx);
-        &self.clients[client_idx % self.clients.len()]
+        &self.clients[client_idx]
     }
 
     pub fn validate(&mut self, tok: &str) -> bool {

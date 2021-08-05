@@ -162,7 +162,7 @@ fn main() -> Result<()> {
 
             // just give the thread a closure that calls the worker function
             let mut cloned = validator.clone();
-            cloned.set_client_offset(i);
+            cloned.set_client_offset(num_threads * i);
             sc.spawn(move |_| worker(cloned, r, s));
         }
 

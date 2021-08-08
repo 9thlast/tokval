@@ -44,7 +44,7 @@ fn main() -> Result<()> {
     simplelog::SimpleLogger::init(level, simplelog::Config::default())?;
 
     let matches = App::new("tokval")
-        .version("1.1.0")
+        .version("2.0.1")
         .author("9th")
         .about("high-speed discord token validator")
         .arg(
@@ -66,6 +66,14 @@ fn main() -> Result<()> {
                 .value_name("proxyfile")
                 .help("file containing a line-separated list of proxies")
                 .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("jobs")
+                .short("j")
+                .long("jobs")
+                .value_name("# jobs")
+                .help("number of threads to spawn (defaults to the number of cpus available)")
+                .takes_value(true)
         )
         .get_matches();
 
@@ -122,7 +130,17 @@ fn main() -> Result<()> {
     };
 
     // spawn as many threads as the cpu has
-    let num_threads = num_cpus::get();
+    let num_threads = if matches.is_present("jobs") {
+        match matches.value_of("jobs").unwrap().parse::<usize>() {
+            Ok(v) => v,
+            Err(e) => {
+                error!("unable to parse number of jobs (must specify an integer)");
+                return Err(anyhow!(e))
+            }
+        }
+    } else {
+        num_cpus::get()
+    };
 
     // create the initial senders and receivers
     let (tok_send, tok_recv) = bounded::<Token>(1);

@@ -44,7 +44,7 @@ fn main() -> Result<()> {
     simplelog::SimpleLogger::init(level, simplelog::Config::default())?;
 
     let matches = App::new("tokval")
-        .version("2.0.1")
+        .version("2.1.0")
         .author("9th")
         .about("high-speed discord token validator")
         .arg(

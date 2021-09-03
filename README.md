@@ -2,34 +2,35 @@ tokval is a high-speed discord token validator.
 
 # synopsis
 ```
-tokval 2.1.0
-9th
+tokval 2.2.0
+by 9th
 high-speed discord token validator
+see https://github.com/9thlast/tokval for documentation
 
 USAGE:
-    tokval [OPTIONS] <input_file> <output_file>
+    tokval [FLAGS] [OPTIONS]
 
 FLAGS:
     -h, --help       Prints help information
     -V, --version    Prints version information
+    -v, --verbose    enables verbose logging
 
 OPTIONS:
-    -j, --jobs <# jobs>          number of threads to spawn (defaults to the number of cpus available)
-    -p, --proxies <proxyfile>    file containing a line-separated list of proxies
-
-ARGS:
-    <input_file>     file containing a line-separated list of tokens
-    <output_file>    file to write all valid tokens to
+    -i, --input <input_file>      file containing a line-separated list of tokens
+    -j, --jobs <# jobs>           number of threads to spawn (defaults to # cpus available)
+    -o, --output <output_file>    file to write all valid tokens to
+    -p, --proxies <proxyfile>     file containing a line-separated list of proxies
 ```
 
 # usage
-tokval is distributed as an executable with no dependencies, so just download it to some directory and run it via the command-line: 
-- \*nix systems: `./tokval --proxies proxyfile.txt input_file.txt output_file.txt`
-- windows systems: `.\tokval.exe --proxies proxyfile.txt input_file.txt output_file.txt`
+the most commonly used command: `tokval --proxies proxies.txt -i tokens.txt -o valid.txt`
 
-the `input_file.txt` here is a list of discord tokens, one per line. `output_file.txt` is the file to write all the valid tokens to (WARNING: tokval will overwrite all contents of `output_file.txt` so be careful!) additionally, tokval supports a `--proxy` option that allows you to specify a file containing a line-separated list of http proxies to use while validating tokens.
+tokval is distributed as an executable with no dependencies, so just download it to some directory (ideally one in your PATH) and run it via the command-line. `tokval` can be run with the input/output sources as a file or the stdout/stderr streams.
+- by default, running `tokval` will read tokens from stdin and write tokens to stdout; it will write logs to stderr
+- tokval can be composed with other programs: `cat tokens.txt | tokval | program_that_uses_tokens`
+- to read tokens from `input_file.txt` and output valid ones to `output_file.txt`: `tokval -i input_file.txt -o output_file.txt`
+- a list of proxies may also be specified in a file and passed via the `--proxies` option: `tokval --proxies proxylist.txt`
 
-optionally, tokval may be installed to a location in your `PATH` and made available from the command-line anywhere
 
 # issues & questions
 just submit any problems/questions to the issues page. pull requests/forks are welcome too.

@@ -4,7 +4,6 @@ use reqwest::{blocking::Client, Proxy, StatusCode};
 use std::thread;
 use std::time::Duration;
 
-
 #[derive(Clone)]
 pub struct Validator {
     clients: Vec<Client>,
@@ -16,7 +15,7 @@ impl Validator {
     pub fn new() -> Validator {
         let clients = vec![Client::new()];
 
-        Validator { 
+        Validator {
             clients,
             offset: 0,
             current: 0,
@@ -83,7 +82,7 @@ impl Validator {
         }
         let res = res.unwrap();
 
-        // if disord gives us an OK then the token is valid
+        // if discord gives us an OK then the token is valid
         let status = res.status();
         debug!("status code: {}", status);
         match status {

@@ -14,8 +14,8 @@ use clap::{App, Arg};
 use crossbeam::channel::bounded;
 use crossbeam::channel::{Receiver, Sender};
 use std::env;
-use std::fs::OpenOptions;
-use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::fs::{File, OpenOptions};
+use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use validate::Validator;
 
 type Token = String;
@@ -41,23 +41,23 @@ fn main() -> Result<()> {
         log::LevelFilter::Info
     };
 
-    simplelog::SimpleLogger::init(level, simplelog::Config::default())?;
-
     let matches = App::new("tokval")
-        .version("2.1.0")
-        .author("9th")
-        .about("high-speed discord token validator")
+        .version("2.2.0")
+        .author("by 9th")
+        .about("high-speed discord token validator\nsee https://github.com/9thlast/tokval for documentation")
         .arg(
             Arg::with_name("input_file")
+                .short("i")
+                .long("input")
                 .help("file containing a line-separated list of tokens")
-                .required(true)
-                .index(1),
+                .takes_value(true)
         )
         .arg(
             Arg::with_name("output_file")
+                .short("o")
+                .long("output")
                 .help("file to write all valid tokens to")
-                .required(true)
-                .index(2),
+                .takes_value(true)
         )
         .arg(
             Arg::with_name("proxies")
@@ -72,38 +72,76 @@ fn main() -> Result<()> {
                 .short("j")
                 .long("jobs")
                 .value_name("# jobs")
-                .help("number of threads to spawn (defaults to the number of cpus available)")
+                .help("number of threads to spawn (defaults to # cpus available)")
                 .takes_value(true)
+        )
+        .arg(
+            Arg::with_name("verbose")
+                .short("v")
+                .long("verbose")
+                .help("enables verbose logging")
         )
         .get_matches();
 
-    // open input file and ensure it's good
-    let input_path = matches.value_of("input_file").unwrap();
-    let input_file = OpenOptions::new().read(true).write(false).open(input_path);
-    let input_file = match input_file {
-        Ok(f) => f,
-        Err(e) => {
-            error!("error opening input file [{}]: {}", input_path, e);
-            return Err(anyhow!(e));
-        }
+    // assign level to trace if the user passed the verbose option
+    // otherwise just leave it as whatever we computed before
+    let level = if matches.is_present("verbose") {
+        log::LevelFilter::Debug
+    } else {
+        level
     };
 
-    // open output file and ensure it's good
-    let output_path = matches.value_of("output_file").unwrap();
-    let output_file = OpenOptions::new()
-        .write(true)
-        .truncate(true)
-        .create(true)
-        .open(output_path);
-    let output_file = match output_file {
-        Ok(f) => f,
-        Err(e) => {
-            error!("error opening output file: [{}]: {}", output_path, e);
-            return Err(anyhow!(e));
-        }
-    };
-
+    let log_cfg = simplelog::ConfigBuilder::new()
+        .add_filter_allow_str("tokval")
+        .build();
     
+    // initialize logger to print to stderr specifically
+    // this way, users can separate the validated tokens and the actual output
+    simplelog::TermLogger::init(
+        level,
+        log_cfg,
+        simplelog::TerminalMode::Stderr,
+        simplelog::ColorChoice::Auto
+    )?;
+
+    let input_path = matches.value_of("input_file").unwrap_or("stdin");
+    let input_file: Option<File> = if matches.is_present("input_file") {
+        // open input file and ensure it's good
+        let input_file = OpenOptions::new().read(true).write(false).open(input_path);
+        let input_file = match input_file {
+            Ok(f) => f,
+            Err(e) => {
+                error!("error opening input file [{}]: {}", input_path, e);
+                return Err(anyhow!(e));
+            }
+        };
+
+        Some(input_file)
+    } else {
+        None
+    };
+
+    let output_path = matches.value_of("output_file").unwrap_or("stdout");
+    let output_file: Option<File> = if matches.is_present("output_file") {
+        // open output file and ensure it's good
+        let output_file = OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .create(true)
+            .open(output_path);
+        let output_file = match output_file {
+            Ok(f) => f,
+            Err(e) => {
+                error!("error opening output file: [{}]: {}", output_path, e);
+                return Err(anyhow!(e));
+            }
+        };
+
+        Some(output_file)
+    } else {
+        None
+    };
+
     let validator = if matches.is_present("proxies") {
         let proxy_path = matches.value_of("proxies").unwrap();
         let proxy_file = OpenOptions::new().read(true).write(false).open(proxy_path);
@@ -135,7 +173,7 @@ fn main() -> Result<()> {
             Ok(v) => v,
             Err(e) => {
                 error!("unable to parse number of jobs (must specify an integer)");
-                return Err(anyhow!(e))
+                return Err(anyhow!(e));
             }
         }
     } else {
@@ -148,7 +186,16 @@ fn main() -> Result<()> {
 
     // load all tokens in from the input file
     let mut tokens: Vec<String> = Vec::new();
-    for line in BufReader::new(input_file).lines() {
+    // to prevent having two entirely separate branches for reading input
+    // we can box a BufRead instance to achieve the polymorphism we want so we can call .lines on it
+
+    // this stdin object needs to be in the main scope, since the lock on it requires it to live long enough
+    let stdin = io::stdin();
+    let reader: Box<dyn BufRead> = match input_file {
+        Some(f) => Box::new(BufReader::new(f)),
+        None => Box::new(stdin.lock()),
+    };
+    for line in reader.lines() {
         let line = line?;
         if !line.trim().is_empty() {
             tokens.push(line.trim().to_string());
@@ -188,6 +235,10 @@ fn main() -> Result<()> {
         drop(val_send);
 
         // spawn a bufwriter since we'll be writing TONS of single-lines
+        let output_file: Box<dyn Write> = match output_file {
+            Some(f) => Box::new(BufWriter::new(f)),
+            None => Box::new(BufWriter::new(io::stdout())),
+        };
         let mut writer = BufWriter::new(output_file);
         // iterate over the received tokens
         for val in val_recv.iter() {

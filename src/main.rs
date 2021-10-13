@@ -81,6 +81,14 @@ fn main() -> Result<()> {
                 .long("verbose")
                 .help("enables verbose logging")
         )
+        .arg(
+            Arg::with_name("log")
+                .short("l")
+                .long("log")
+                .value_name("log file")
+                .help("file to output logs to")
+                .takes_value(true)
+        )
         .get_matches();
 
     // assign level to trace if the user passed the verbose option
@@ -95,14 +103,30 @@ fn main() -> Result<()> {
         .add_filter_allow_str("tokval")
         .build();
     
-    // initialize logger to print to stderr specifically
-    // this way, users can separate the validated tokens and the actual output
-    simplelog::TermLogger::init(
-        level,
-        log_cfg,
-        simplelog::TerminalMode::Stderr,
-        simplelog::ColorChoice::Auto
-    )?;
+    // if the user supplied the log option, then we want to init the logger
+    // to write to the supplied log file
+    if matches.is_present("log") {
+        let logfp = matches.value_of("log").unwrap();
+        let logfile = OpenOptions::new()
+            .write(true)
+            .read(false)
+            .create(true)
+            .open(logfp)
+            .expect("could not open supplied log file for writing!");
+        
+        simplelog::WriteLogger::init(
+            level,
+            log_cfg,
+            logfile
+        )?;
+    } else { // otherwise, we just need to initialize a TermLogger for stderr
+        simplelog::TermLogger::init(
+            level,
+            log_cfg,
+            simplelog::TerminalMode::Stderr,
+            simplelog::ColorChoice::Auto
+        )?;
+    }
 
     let input_path = matches.value_of("input_file").unwrap_or("stdin");
     let input_file: Option<File> = if matches.is_present("input_file") {

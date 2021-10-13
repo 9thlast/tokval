@@ -25,7 +25,7 @@ impl Validator {
         let mut clients = Vec::new();
 
         for proxy in proxies {
-            let client = Client::builder().proxy(Proxy::all(proxy)?).build()?;
+            let client = Client::builder().proxy(Proxy::http(proxy)?).build()?;
 
             clients.push(client);
         }

@@ -2,7 +2,7 @@ tokval is a high-speed discord token validator.
 
 # synopsis
 ```
-tokval 2.2.1
+tokval 2.2.2
 by 9th
 high-speed discord token validator
 see https://github.com/9thlast/tokval for documentation

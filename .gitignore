@@ -1,1 +1,4 @@
 /target
+
+# exclude any testing .txt files containing tokens/logs/etc.
+*.txt

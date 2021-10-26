@@ -42,7 +42,7 @@ fn main() -> Result<()> {
     };
 
     let matches = App::new("tokval")
-        .version("2.2.2")
+        .version("2.2.3")
         .author("by 9th")
         .about("high-speed discord token validator\nsee https://github.com/9thlast/tokval for documentation")
         .arg(

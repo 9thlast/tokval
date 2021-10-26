@@ -203,7 +203,7 @@ fn main() -> Result<()> {
     } else {
         // a little bit of testing showed that, for each cpu the host machine has, we can support about 10 checker threads
         // so simply multiply the number of cpus by 10 to get the # threads
-        num_cpus::get() * 10;
+        num_cpus::get() * 10
     };
 
     // create the initial senders and receivers
